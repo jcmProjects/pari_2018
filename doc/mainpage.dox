@@ -1,0 +1,390 @@
+/** @mainpage ClassQuiz - Sistema de Inquérito e Avaliação em Sala de Aula
+ * 
+ * @section intro_sec Introdução
+ * 
+ * O trabalho apresentado encontra-se integrado com o tema de dissertação "Desenvolvimento e implementação em contexto realista do sistema CLASSQUIZ". Este sistema, cujo desenvolvimento precede a realização deste trabalho, procura promover momentos de avaliação individual dos alunos presentes numa sala de aula, através da realização de um inquérito electrónico. Para cada aluno deverá existir um terminal individual, capaz de ler e validar o cartão de estudante, através do qual se poderá responder a questões de escolha múltipla. O terminal comunica com uma estação receptora (computador) por Wi-Fi, que estabelece as trocas de comunicações com o terminal individual.\n\n
+ * 
+ * O principal objectivo deste trabalho é o desenvolvimento de uma interface gráfica, simples e intuitiva, que possibilite ao utilizador da estação receptora (professor), definir os parâmetros necessários à realização do inquérito, tais como a definição da pergunta e das várias respostas possíveis, bem como monitorizar as respostas dos utilizadores dos terminais individuais (alunos), tendo por base o esquema apresentado na figura 1.
+ *
+ * \image html img/esquema1.png Figura 1: Arquitectura de base do projecto.
+ *
+ * \n
+ * @section objectivos_sec Objectivos do Trabalho
+ *
+ * Como já foi referido, o sistema CLASSQUIZ já se econtrava parcialmente desenvolvido aquando da realização deste trabalho. Mais concretamente, encontrava-se desenvolvido o terminal individual, bem como o protótipo de uma interface gráfica desenvolvida em ambiente VisualBasic. Desta forma, o presente trabalho prevê a conclusão de 3 objectivos principais:\n
+ * <ul>
+ * <li> Actualizar do <i>firmware</i> do terminal individual, de forma a possibilitar a validação de novos cartões; </li>
+ * <li> Estabelecer uma comunicação <i>wireless</i> com a estação receptora (computador); </li>
+ * <li> Desenvolver uma interface gráfica, em ambiente GTK, de monitorização das comunicações entre o terminal individual e a estação receptora. </li></ul>
+ *
+ * \n
+ * @section hardware_sec Hardware Utilizado
+ * 
+ * O terminal individual é constituído pelo seguinte <i>hardware</i>:\n
+ * <ul>
+ * <li> Um microcontrolador <a href = "https://docs.zerynth.com/latest/official/board.zerynth.nodemcu3/docs/index.html">NodeMCU v3</a>, que permite comunicações Wi-Fi, graças à incorporação do módulo <a href = "https://www.espressif.com/en/products/hardware/esp8266ex/overview">ESP8266</a>; </li>
+ * <li> Um módulo <a href = "https://www.nxp.com/docs/en/data-sheet/MFRC522.pdf">Mifare RFID RC522</a>, que permite a leitura da UID (Unique ID) dos cartões de estudante; </li>
+ * <li> Uma placa PCB para estabelecer as ligações entre componentes, bem como para a acomodação dos botões para interacção com o utilizador do terminal individual. </li></ul>
+ * 
+ * Para além do terminal individual, é também utilizado o <i>router</i> <a href = "http://imgs.sapo.pt/images/AJUDA2009/Manual_DVA-G3170i.pdf">D-Link DVA-G3170i</a>, configurado de forma a que o endereço IP, tanto da estação receptora como do terminal individual, seja sempre o mesmo.\n
+ *
+ * <table style = "width:100%">
+ * <tr>
+ * <td> \image html img/nodemcu2.png Figura 2: NodeMCU v3. </td>
+ * <td> \image html img/mifare2.jpg Figura 3: Mifare RC522. </td>
+ * <td> \image html img/router2.png Figura 4: Router D-Link DVA-G3170i. </td>
+ * </tr>
+ * </table>
+ *
+ * \n
+ * @section remoto_subsec Descrição do Sistema Remoto
+ * 
+ * O terminal individual corresponde ao sistema remoto com o qual o programa desenvolvido deve comunicar. Tal como foi referido na secção anterior, o terminal individual é consituído por um microcontrolador, equipado com um módulo ESP8266, um módulo para leitura de cartões RFID e uma placa PCB, concebida para estabelecer as ligações entre os vários componentes e acomodar os botões, como mostra a figura 5.\n\n
+ * 
+ * \image html img/classquiz1.png Figura 5: Montagem do sistema real.
+ * 
+ * Préviamente à realização deste trabalho, o protocolo de comunicação implementado no sistema era o UDP. Contudo, optou-se pela adopção do protocolo TCP/IP para estabelecer a comunicação entre o terminal individual e a estação receptora, uma vez que este garante a confirmação da recepção da mensagem pela estação receptora, sendo esta uma característica da maior importância no projecto desenvolvido.\n\n
+ * 
+ * A comunicação entre o microcontrolador e o módulo RFID pode ser do tipo SPI ou I²C. No trabalho apresentado é utilizado o protocolo SPI, uma vez que já se econtrava implementado no sistema.\n\n
+ *
+ * O princípio de funcionamento do terminal é o seguinte: quando se liga o microcontrolador (por via de uma fonte de alimentação), este irá tentar estabelecer uma conexão ao servidor. Assim, é mandatório que o terminal individual seja ligado a uma fonte de alimentação apenas quando o servidor estiver online. Caso tal não aconteça, será necessário reiniciar o sistema remoto.\n\n
+ * 
+ * Após ter sido estabelecida uma conexão ao servidor, o sistema remoto fica a aguardar pela presença de um cartão RFID para leitura da sua UID. Se a UID lida for uma das definidas como válida, o sistema passa então a aguardar que um dos botões seja premido. Quando um botão for premido, o terminal individual envia uma <i>string</i> ao servidor com a indicação do botão premido, e volta a aguardar a presença de um cartão RFID.\n\n
+ * 
+ * Todo o código auxiliar do <i>hardware</i> encontra-se disponíveil na secção Anexos para consulta, sendo apenas alterado para proteger a informação relativa à SSID da rede, palavra-passe e UID dos cartões de estudante válidos.
+ *
+ * \n
+ * @section arquitectura_subsec Arquitectura do Programa
+ * 
+ * O programa desenvolvido biforca-se, durante o arranque, em dois processos distintos: um responsável pela execução e gestão da interface gráfica, e outro responsável pelo servidor e comunicações com o sistema remoto. O processo responsável pelas comunicações TCP/IP é novamente biforcado quando o sistema remoto se conectar com o servidor. Este novo processo será responsável pela comunicação com o cliente, deixando o processo responsável pela manutenção do servidor livre para aceitar novas conexões. Apesar de neste trabalho existir apenas um sistema remoto e, consequentemente, apenas um cliente, optou-se por seguir a abordagem referida anteriormente, uma vez que, no futuro, existirão vários sistemas remotos a comunicar com o servidor.\n\n
+ * 
+ * A comunicação entre processos dá-se de duas formas: por via de sinais (SIGURS1 e SIGURS2) e através de uma <i>shared memory</i>. O sinal SIGUSR1, quando enviado ao processo responsável pelo servidor, serve para dar indicação de que deve terminar a sua execução, ao passo que quando é enviado ao processo responsável pela interface gráfica, serve para indicar que o sistema remoto se conectou com o servidor (quando enviado pelo servidor), ou que o sistema remoto leu um cartão válido (quando enviado pelo gestor de clientes). Por sua vez, quando enviado ao processo responsável pela interface gráfica, o sinal SIGUSR2 serve para indicar que ocorreu um erro no arranque do servidor (se enviado pelo mesmo), ou para comunicar à interface gráfica que um botão foi premido no sistema remoto (se enviado pelo gestor de clientes). O mesmo sinal, quando enviado ao processo do servidor, serve para lhe indicar que deve alterar o seu estado, isto é, ligar o servidor caso se encontre desligado, ou desligar caso se encontre ligado. Este sinal é ainda utilizado para indicar ao processo responsável pela comunicação com o cliente que deve terminar a sua execução.\n\n
+ * 
+ * A <i>shared memory</i> é utilizada para trocar informações mais complexas entre os processos. Mais concretamente, é nela que o processo responsável pela comunicação com o cliente irá guardar as mensagens (botão premido) provenientes do sistema remoto. A interface gráfica irá, posteriormente, ler essa memória de forma a mostrar ao utilizador da estação receptora o conteúdo da mensagem.
+ * 
+ *  \image html img/Diagram.png Figura 6: Arquitectura do programa. </td>
+ * 
+ * \n
+ * @section comunicacao_subsec Processo de Comunicação
+ *
+ * Todos os equipamentos encontram-se ligados à rede fornecida pelo <i>router</i>. Aquando o arranque da interface gráfica, é iniciado o servidor, que fica a aguardar a conexão do cliente (terminal individual). Quando esta ocorrer, é enviado um sinal ao processo onde corre a interface gráfica, avisando-o de que o cliente está conectado com o servidor. Esta ligação permanecerá activa até que o servidor se desligue, ou o cliente termine a conexão. A comunicação dar-se-á sempre no sentido sistema remoto -> estação receptora.
+ *
+ *
+ * \n
+ * @section interface_subsec Interface Gráfica
+ *
+ * Durante o desenvolvimento da interface gráfica, foi tido em consideração que esta deve ser o mais simples e intuitiva possível. Assim, foram tomadas como referência as interfaces e suas funcionalidades, de programas utilizados no dia-a-dia pela maioria das pessoas, como o Google Chrome ou o Microsoft Word. O objectivo é que um qualquer utilizador seja capaz de utilizar o programa desenvolvido sem ter de recorrer à documentação do mesmo.\n\n
+ *
+ * A interface arranca com uma janela de boas vindas (figura 7). Esta janela, embora possa parecer redundante, serve como compasso de espera para que o servidor se inicie. Após alguns instantes, é exibida a janela do Menu Principal (figura 8), onde são apresentadas duas opções ao utilizador: criar um inquérito novo, ou aceder à janela de apresentação. É ainda mostrada uma mensagem que permite ao utilizador saber o estado do servidor, nomeadamente se ocoreu algum erro com o seu arranque, ou se já estabeleceu conexão com o sistema remoto.
+ * 
+ * <table style = "width:100%">
+ * <tr>
+ * <td> \image html img/welcome.png Figura 7: Janela de boas vindas. </td>
+ * <td> \image html img/menu.png Figura 8: Menu principal. </td>
+ * </tr>
+ * </table> 
+ *
+ * Se já existir um questionário guardado, o utilizador pode premir o botão "Play", e de seguida abrir o ficheiro com o mesmo. Caso contrário, o utilizador deve aceder primeiramente à janela de criação (figura 9). Aqui, o utilizador poderá criar o um inquérito novo, ou carregar um já existente a partir de um ficheiro (File -> Open). Caso o utilizador opte por criar um inquérito novo, são lhe dadas as seguintes opções:
+ * 
+ * <ul>
+ * <li> Definir o tempo de resposta, em segundos, até um máximo de 100; </li>
+ * <li> Carregar uma imagem a partir de um ficheiro, com dimensões até 854x480 para ecrãs com uma resolução de 1920x1080 (16:9), ou 340x192 para ecrãs com uma resolução menor; </li>
+ * <li> Definir a pergunta, até um máximo de 35 caracteres para ecrãs com uma resolução de 1920x1080 (16:9) e 1280x720 (16:9), ou 25 caracteres para ecrãs com uma resolução de 1024x768 (4:3); </li>
+ * <li> Definir as respostas possíveis, até um máximo de 25 caracteres, para ecrãs com uma resolução de 1920x1080 (16:9) e 1280x720 (16:9), ou 15 caracteres para ecrãs com uma resolução de 1024x768 (4:3); </li>
+ * <li> Definir qual a resposta certa, se existir. </li></ul>
+ * 
+ * O utilizador pode ainda guardar um ficheiro com a configuração do inquérito para futuras utilizações (File -> Save/Save As). Caso se trate de um ficheiro novo, isto é, um ficheiro que ainda não foi guardado, a opção "Save" terá o mesmo comportamento da opção "Save As". Os ficheiros devem ser guardados com a extensão "*.quiz", definida por defeito.
+ *
+ * \image html img/edit.png Figura 9: Janela de criação. </td>
+ *
+ * Na parte inferior da janela é exibida uma pré-visualização da janela de apresentação, permitindo ao utilizador ter um <i>feedback</i> instantâneo de como esta será.\n\n
+ *
+ *  Quando o utilizador estiver satisfeito com o inquérito criado, pode premir o botão "Forward" para passar à janela de apresentação (figura 10). Esta janela é exibida em <i>fullscreen</i> por se tratar da janela que é apresentada aos alunos. No canto inferior esquerdo, o utilizador tem a opção de voltar atrás para a janela de criação, ou de iniciar o questionário, premindo o botão "Play". É importante referir que este botão só ficará activo quando o sistema remoto se conectar com o servidor, não sendo, por isso, possível a realização do inquérito caso tal não se verifique. Uma vez iniciado o questionário, todas as opções ficam bloqueadas até que o tempo termine. Durante este período, o utilizador do sistema remoto deverá apresentar o seu cartão de estudante e responder à questão apresentada. Uma vez terminado o tempo, o botão "Forward" torna-se activo, e, uma vez premido, leva-nos à janela de apresentação de resultados (figura 11).
+ * 
+ * \image html img/play.png Figura 10: Janela de apresentação. </td>
+ * 
+ * A janela de apresentação de resultados mostra a resposta dada pelo utilizador do terminal individual, bem como a indicação se a resposta está certa ou errada. Premindo o botão "Home" o utilizador será encaminhado para a janela do Menu Principal, ou poderá repetir o processo. 
+ * 
+ * \image html img/results.png Figura 11: Janela de apresentação de resultados. </td>
+ * 
+ * NOTA: O logotipo utilizado foi gerado em <a href = "https://www.freelogodesign.org/">https://www.freelogodesign.org/</a>. O icon da aplicação faz parte do pacote de ícons <a href = "https://github.com/numixproject/numix-icon-theme-circle">Numix Circle Light</a>. A interface foi testada com o tema padrão do Ubuntu 18.04 LTS e com os temas da <i>shell</i> <a href = "https://gitlab.com/LinxGem33/X-Arc-Darker">X-Arc-Darker</a> e <a href = "https://gitlab.com/LinxGem33/X-Arc-Shadow">X-Arc-Shadow</a>, bem como com o pacote de ícons <a href = "https://github.com/numixproject/numix-icon-theme-circle">Numix Circle Light</a>. Este programa está optimizado em ecrãs com resolução de 1920x1080 (16:9), 1280x720 (16:9) e 1024x768 (4:3). 
+ * 
+ * \n\n
+ * \n
+ * @section anexos_sec Anexos
+ * 
+ * 
+ *
+ * @subsection esp_code_subsec Programa do Sistema Remoto
+ *
+ * \verbatim
+#define SS_PIN 4  //D2 SDA
+#define RST_PIN 5 //D1 RST
+
+#include <SPI.h>
+#include <MFRC522.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+
+
+// -----------------------------------------------------
+// -                         RFID                      -
+// -----------------------------------------------------
+MFRC522 mfrc522(SS_PIN, RST_PIN);                                 // Create MFRC522 instance.
+int statuss = 0;                                                  // * No Authorized Card Read = 0
+                                                                  // * Authorized Card Read = 1
+int out = 0;
+
+String AccessKey = "OLA";                                         // Insert Valid Keyword (???)
+String auth[] = {"00 00 00 00 00 00 00", "FF FF FF FF FF FF FF"}; // Authorized Cards (edited for privacy)
+int keySize = AccessKey.length();
+int authorized = 0;                                               // * Not Authorized = 0
+                                                                  // * Authorized = 1
+
+
+// -----------------------------------------------------
+// -                       Router                      -
+// -----------------------------------------------------
+int connection = 0;
+const char* ssid = "XXXXXXXX";					  // Edited for privacy
+const char* password = "xxxxxx";				  // Edited for privacy
+
+
+// -----------------------------------------------------
+// -                  Digital Outputs                  -
+// -----------------------------------------------------
+const int Q0 = 16;//D0
+const int Q1 = 15;//D8
+const int Q2 = A0;
+const int ledGreen = 2; //D4
+const int ledRed = 0; //D3
+
+int StateQ0 = 0;
+int StateQ1 = 0;
+int StateQ2 = 0;
+
+
+// -----------------------------------------------------
+// -                        UDP                        -
+// -----------------------------------------------------
+char  buttonPacket1[] = "1";
+char  buttonPacket2[] = "2";
+char  buttonPacket3[] = "3";
+char  buttonPacket4[] = "4";
+char  buttonPacket5[] = "5";
+char UID[] = "";
+String str = "";
+
+
+// -----------------------------------------------------
+// -                       TCP/IP                      -
+// -----------------------------------------------------
+WiFiClient ClientEsp;
+char server_ip[] = "192.168.10.2";
+
+
+// =====================================================
+// =                        Setup                      =
+// =====================================================
+void setup() {
+
+  Serial.begin(9600);
+
+  // *** Set NodeMCU I/O's ***
+  pinMode(Q0, INPUT);
+  pinMode(Q1, INPUT);
+  pinMode(ledGreen, OUTPUT);
+  pinMode(ledRed, OUTPUT);
+
+  // *** SPI - MFRC522 ***
+  SPI.begin();          // Initiate  SPI bus
+  delay(100);
+  mfrc522.PCD_Init();   // Initiate MFRC522
+
+
+  // *** WiFi ***
+  WiFi.begin(ssid, password);
+ 
+  // Wait for Connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(200);
+  }
+
+  // Connection Established
+  delay(200);
+    
+  // Connection to Server
+  if (ClientEsp.connect(server_ip, 50000)) {
+    connection = 1;
+    delay(500);
+  }
+}
+
+
+
+// =====================================================
+// =                        Loop                       =
+// =====================================================
+void loop() {
+
+  // some variables we need
+  byte block;
+  byte len;                                                         // read length
+  String content = "";                                              // Content read from RFID
+
+  
+
+  //             ===== Read RFID Card =====
+  if (statuss == 0) { 
+
+    MFRC522::MIFARE_Key key;
+    for (byte i = 0; i < 6; i++) 
+      key.keyByte[i] = 0xFF;
+    MFRC522::StatusCode status;
+
+    if ( !mfrc522.PICC_IsNewCardPresent() )
+      return;
+    // Select one of the cards
+    if ( !mfrc522.PICC_ReadCardSerial() )
+      return;
+
+    for (byte i=0; i<mfrc522.uid.size; i++) {   
+      content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
+      content.concat(String(mfrc522.uid.uidByte[i], HEX));
+    }
+
+
+
+    //         ===== Check Authorization =====
+    content.toUpperCase();
+    (content.substring(1)).toCharArray(UID, 21);
+    String str(UID);
+   
+    for (int i=0; i<sizeof(auth); i++) {
+      if (auth[i] == str) {
+        authorized = 1;        // authorized
+        break;
+      }
+    }
+      
+    if (authorized == 1) {
+      statuss = 1;
+      connection = 1; // = 0
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+    }
+    else {
+      digitalWrite(ledRed, HIGH);
+      delay(500);
+      digitalWrite(ledRed, LOW);
+    }
+  }
+
+
+
+  //       ===== Read/Send Button State ===== 
+  else if ((connection == 1) && (statuss == 1)) {
+
+    //       ===== Read Input State =====
+    for (int i=0; i<=1; i++) { 
+      StateQ1 = digitalRead(Q1);
+      StateQ0 = digitalRead(Q0);
+    }
+    for (int i=0; i <= 1; i++)
+      StateQ2 = analogRead(Q2);
+
+    delay(10);
+    
+
+    // *** Button 1 ***
+    if ((StateQ2 < 500) && (StateQ1 == LOW) && (StateQ0 == HIGH)) {
+
+      char combinedArray[sizeof(buttonPacket1) + sizeof(UID) + 1];
+      sprintf(combinedArray, "%s %s", buttonPacket1, UID); // with word space
+
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+
+      ClientEsp.print(buttonPacket1);
+      
+      statuss = 0;
+      authorized = 0;
+      connection = 0;
+    }
+    
+    // *** Button 2 ***
+    else if ((StateQ2 < 500) && (StateQ1 == HIGH) && (StateQ0 == LOW)) {
+      char combinedArray[sizeof(buttonPacket2) + sizeof(UID) + 1];
+      sprintf(combinedArray, "%s %s", buttonPacket2, UID);
+
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+
+      ClientEsp.print(buttonPacket2);
+
+      statuss = 0;
+      authorized = 0;
+      connection = 0;
+    }
+
+    // *** Button 3 ***
+    else if ((StateQ2 < 500) && (StateQ1 == HIGH) && (StateQ0 == HIGH)) {
+      
+      char combinedArray[sizeof(buttonPacket3) + sizeof(UID) + 1];
+      sprintf(combinedArray, "%s %s", buttonPacket3, UID);
+
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+
+      ClientEsp.print(buttonPacket3);
+
+      statuss = 0;
+      authorized = 0;
+      connection = 0;
+    }
+
+    // *** Button 4 ***
+    else if ((StateQ2 == 1024) && (StateQ1 == LOW) && (StateQ0 == LOW)) {
+
+      char combinedArray[sizeof(buttonPacket4) + sizeof(UID) + 1];
+      sprintf(combinedArray, "%s %s", buttonPacket4, UID);
+      //Serial.println(combinedArray);
+
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+
+      ClientEsp.print(buttonPacket4);
+
+      statuss = 0;
+      authorized = 0;
+      connection = 0;
+    }
+
+    // *** Button 5 ***
+    else if ((StateQ2 == 1024) && (StateQ1 == LOW) && (StateQ0 == HIGH)) {
+
+      char combinedArray[sizeof(buttonPacket5) + sizeof(UID) + 1];
+      sprintf(combinedArray, "%s %s", buttonPacket5, UID);
+
+      digitalWrite(ledGreen, HIGH);
+      delay(500);
+      digitalWrite(ledGreen, LOW);
+
+      ClientEsp.print(buttonPacket5);
+
+      statuss = 0;
+      authorized = 0;
+      connection = 0;
+    }
+  }
+}\endverbatim
+ *
+ */
+
+
+
